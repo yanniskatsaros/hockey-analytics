@@ -191,10 +191,10 @@ def _get_players_on_ice(year : int, season : str, game_number : int) -> Tuple[st
     url = f'http://www.nhl.com/scores/htmlreports/{year_id}/PL{game_id}.HTM'
     response = requests.get(url)
 
-    return response.text, game_id
+    return response.text, year_id, game_id
 
 
-def _parse_players_on_ice(html : str, game_id : str) -> pd.DataFrame:
+def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFrame:
     """
     Parameters
     ----------
@@ -326,6 +326,22 @@ def _parse_players_on_ice(html : str, game_id : str) -> pd.DataFrame:
     plays_scrape = plays_scrape[cols]
     plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
 
+    # get roster data to convert jersey numbers to player_id
+    
+    # first make the appropriate conversions
+    year = int(year_id[:4])
+    # convert season from numerical index back to human-friendly index
+    season_dict = {
+        '01' : 'pre',
+        '02' : 'regular',
+        '03' : 'post',
+        '04' : 'all-star'
+    }
+    season = game_id[:2]
+    season : str = season_dict.get(season)
+    game_number = int(game_id[2:])
+    roster_data = get_roster(year, season, game_number)
+
     return plays_scrape
 
 
@@ -422,3 +438,7 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
 # TODO substitute jersey number for player ID in on-ice data
 # TODO combined plays with on-ice data to produce final dataset
 # TODO formalize functions to match SQL tables' column names
+
+if __name__ == "__main__":
+#    scrape_data = _get_players_on_ice(2018, 'regular', 1)
+#    _parse_players_on_ice(scrape_data[0], scrape_data[1], scrape_data[2])
