@@ -327,7 +327,6 @@ def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFr
     plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
 
     # get roster data to convert jersey numbers to player_id
-    
     # first make the appropriate conversions
     year = int(year_id[:4])
     # convert season from numerical index back to human-friendly index
@@ -341,6 +340,19 @@ def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFr
     season : str = season_dict.get(season)
     game_number = int(game_id[2:])
     roster_data = get_roster(year, season, game_number)
+
+    # add player ID to dataframe
+    # create dictionary to add player IDs
+    roster_data['player_guid'] = roster_data['home_away'] + roster_data['jersey_number']
+    player_dict = roster_data.set_index('player_guid').to_dict()['player_id']
+
+    # create guid columns for scraped data
+    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
+    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
+
+    # update scraped data with player IDs
+    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].replace(player_dict))
+    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].replace(player_dict))
 
     return plays_scrape
 
@@ -435,10 +447,7 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
     players = pd.DataFrame(players)
     return players
 
-# TODO substitute jersey number for player ID in on-ice data
 # TODO combined plays with on-ice data to produce final dataset
 # TODO formalize functions to match SQL tables' column names
 
 if __name__ == "__main__":
-#    scrape_data = _get_players_on_ice(2018, 'regular', 1)
-#    _parse_players_on_ice(scrape_data[0], scrape_data[1], scrape_data[2])
