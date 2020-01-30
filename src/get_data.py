@@ -194,12 +194,20 @@ def _get_players_on_ice(year : int, season : str, game_number : int) -> Tuple[st
     return response.text, year_id, game_id
 
 
-def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFrame:
+def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame:
     """
     Parameters
     ----------
     html : str
         An HTML text of the play-by-play data
+    
+    year : int
+        The season starting year of the game
+        Example: 2018 (for the 2018-2019 season)
+    
+    game_id : str
+        The id for the game, which is a combination
+        of the season id and game id
 
     Returns
     -------
@@ -327,18 +335,20 @@ def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFr
     plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
 
     # get roster data to convert jersey numbers to player_id
-    # first make the appropriate conversions
-    year = int(year_id[:4])
-    # convert season from numerical index back to human-friendly index
+    # create dictionary to convert season from numerical index
+    # back to human-friendly index
     season_dict = {
         '01' : 'pre',
         '02' : 'regular',
         '03' : 'post',
         '04' : 'all-star'
     }
+    # get season number from game_id then convert using season_dict
     season = game_id[:2]
     season : str = season_dict.get(season)
     game_number = int(game_id[2:])
+    
+    # pull roster data to get player IDs to add to dataframe
     roster_data = get_roster(year, season, game_number)
 
     # add player ID to dataframe
@@ -446,6 +456,31 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
         
     players = pd.DataFrame(players)
     return players
+
+
+def combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, year : int) -> pd.DataFrame:
+    """
+    Parameters 
+    ----------
+    api_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _parse_api_plays() method
+
+    scrape_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _parse_players_on_ice() method
+        {'pre', 'regular', 'post', 'all-star'}
+    
+    year : int
+        The season starting year of the game
+        Example: 2018 (for the 2018-2019 season)
+        
+    Returns
+    -------
+    pd.DataFrame
+        The combined data as a pandas DataFrame
+    """
+    # create updated game_id
 
 # TODO combined plays with on-ice data to produce final dataset
 # TODO formalize functions to match SQL tables' column names
