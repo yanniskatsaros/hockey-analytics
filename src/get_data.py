@@ -191,10 +191,10 @@ def _get_players_on_ice(year : int, season : str, game_number : int) -> Tuple[st
     url = f'http://www.nhl.com/scores/htmlreports/{year_id}/PL{game_id}.HTM'
     response = requests.get(url)
 
-    return response.text, game_id
+    return response.text, year_id, game_id
 
 
-def _parse_players_on_ice(html : str, game_id : str) -> pd.DataFrame:
+def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFrame:
     """
     Parameters
     ----------
@@ -326,6 +326,34 @@ def _parse_players_on_ice(html : str, game_id : str) -> pd.DataFrame:
     plays_scrape = plays_scrape[cols]
     plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
 
+    # get roster data to convert jersey numbers to player_id
+    # first make the appropriate conversions
+    year = int(year_id[:4])
+    # convert season from numerical index back to human-friendly index
+    season_dict = {
+        '01' : 'pre',
+        '02' : 'regular',
+        '03' : 'post',
+        '04' : 'all-star'
+    }
+    season = game_id[:2]
+    season : str = season_dict.get(season)
+    game_number = int(game_id[2:])
+    roster_data = get_roster(year, season, game_number)
+
+    # add player ID to dataframe
+    # create dictionary to add player IDs
+    roster_data['player_guid'] = roster_data['home_away'] + roster_data['jersey_number']
+    player_dict = roster_data.set_index('player_guid').to_dict()['player_id']
+
+    # create guid columns for scraped data
+    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
+    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
+
+    # update scraped data with player IDs
+    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].replace(player_dict))
+    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].replace(player_dict))
+
     return plays_scrape
 
 
@@ -419,6 +447,7 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
     players = pd.DataFrame(players)
     return players
 
-# TODO substitute jersey number for player ID in on-ice data
 # TODO combined plays with on-ice data to produce final dataset
 # TODO formalize functions to match SQL tables' column names
+
+if __name__ == "__main__":
