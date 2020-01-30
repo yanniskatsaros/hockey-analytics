@@ -519,6 +519,42 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
     
     return combined_df
 
+
+def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
+    """
+    Parameters 
+    ----------
+    combined_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _combine_api_scrape_data() method
+        
+    Returns
+    -------
+    pd.DataFrame
+        The combined data filtered to faceoff data
+        as a pandas DataFrame
+    """
+    faceoff_df = combined_df[combined_df['play_type_id'] == "FACEOFF"].reset_index()
+    
+    # create list of columns to keep in faceoff_df
+    faceoff_cols = [
+        'game_id',
+        'play_type_id',
+        'period',
+        'time_elapsed',
+        'player1_id',
+        'player2_id',
+        'away_1','away_2','away_3','away_4','away_5','away_6',
+        'home_1','home_2','home_3','home_4','home_5','home_6'
+    ]
+    faceoff_df = faceoff_df[faceoff_cols]
+
+    # convert player1_id & player2_id columns to match roster data
+    faceoff_df['player1_id'] = 'ID' + faceoff_df['player1_id'].astype(int).astype(str)
+    faceoff_df['player2_id'] = 'ID' + faceoff_df['player2_id'].astype(int).astype(str)
+
+    return faceoff_df
+
 # TODO formalize functions to match SQL tables' column names
 
 if __name__ == "__main__":
