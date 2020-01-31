@@ -512,6 +512,7 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
     scrape_cols = [
         'game_id',
         'period',
+        'strength',
         'time_elapsed',
         'away_1','away_2','away_3','away_4','away_5','away_6',
         'home_1','home_2','home_3','home_4','home_5','home_6'
@@ -547,7 +548,10 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
         'game_id',
         'play_type_id',
         'period',
+        'strength',
         'time_elapsed',
+        'play_x_coordinate',
+        'play_y_coordinate',
         'player1_id',
         'player2_id',
         'away_1','away_2','away_3','away_4','away_5','away_6',
@@ -566,5 +570,9 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     api_data = _get_api_plays(2018, 'regular', 1)
     api_df = _parse_api_plays(api_data)
-    
-    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/test_df.csv')
+    scrape_data = _get_players_on_ice(2018, 'regular', 1)
+    scrape_df = _parse_players_on_ice(scrape_data[0], scrape_data[1], scrape_data[2])
+    combined_df = _combine_api_scrape_data(api_df, scrape_df, scrape_data[1])
+
+    faceoff_data = _get_faceoff_data(combined_df)    
+    faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
