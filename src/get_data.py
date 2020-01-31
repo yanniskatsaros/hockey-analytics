@@ -91,9 +91,12 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         'home_team_id' : [],
         'home_team_code' : [],
         'event_id' : [],
+        'event_idx' : [],
         'play_type' : [],
         'play_type_id' : [],
         'play_description' : [],
+        'play_x_coordinate' : [],
+        'play_y_coordinate' : [],
         'period' : [],
         'time_elapsed' : [],
         'time_remaining' : [],
@@ -111,9 +114,12 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         plays["home_team_id"].append(home_team_id)
         plays["home_team_code"].append(home_team_code)
         plays['event_id'].append(play.get('about').get('eventId'))
+        plays['event_idx'].append(play.get('about').get('eventIdx'))
         plays['play_type'].append(play.get('result').get('event'))
         plays['play_type_id'].append(play.get('result').get('eventTypeId'))
         plays['play_description'].append(play.get('result').get('description'))
+        plays['play_x_coordinate'].append(play.get('coordinates').get('x'))
+        plays['play_y_coordinate'].append(play.get('coordinates').get('y'))
         plays['period'].append(play.get('about').get('period'))
         plays['time_elapsed'].append(play.get('about').get('periodTime'))
         plays['time_remaining'].append(play.get('about').get('periodTimeRemaining'))
@@ -558,3 +564,7 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
 # TODO formalize functions to match SQL tables' column names
 
 if __name__ == "__main__":
+    api_data = _get_api_plays(2018, 'regular', 1)
+    api_df = _parse_api_plays(api_data)
+    
+    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/test_df.csv')
