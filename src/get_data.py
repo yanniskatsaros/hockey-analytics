@@ -6,6 +6,7 @@ from dateutil.parser import parse
 from pytz import timezone
 from typing import Tuple, List
 
+
 def _get_api_plays(year : int, season : str, game_number : int) -> str:
     """
     Parameters 
@@ -94,7 +95,7 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         'event_idx' : [],
         'play_type' : [],
         'play_type_id' : [],
-        'play_description' : [],
+        'play_description_api' : [],
         'play_x_coordinate' : [],
         'play_y_coordinate' : [],
         'period' : [],
@@ -117,7 +118,7 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         plays['event_idx'].append(play.get('about').get('eventIdx'))
         plays['play_type'].append(play.get('result').get('event'))
         plays['play_type_id'].append(play.get('result').get('eventTypeId'))
-        plays['play_description'].append(play.get('result').get('description'))
+        plays['play_description_api'].append(play.get('result').get('description'))
         plays['play_x_coordinate'].append(play.get('coordinates').get('x'))
         plays['play_y_coordinate'].append(play.get('coordinates').get('y'))
         plays['period'].append(play.get('about').get('period'))
@@ -222,16 +223,16 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     """
     soup = BeautifulSoup(html, 'lxml')
     # trs - table rows in an HTML table
-    trs = soup.find_all('tr', class_='evenColor')
+    trs = soup.find_all('tr', {'class':['oddColor', 'evenColor']})#, class_='evenColor')
     # set up dictionary to hold data lists before converting to Pandas dataframe
     play_by_play_data = {
         'event_id' : [],
         'period' : [],
-        'strength' : [],
+        'player_1_strength' : [],
         'time_elapsed' : [],
         'time_remaining' : [],
         'play_type' : [],
-        'play_description' : [],
+        'play_description_html' : [],
         'away_on_ice' : [],
         'home_on_ice' : []
     }
@@ -240,11 +241,11 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     key_lookup = {
         1 : 'event_id',
         3 : 'period',
-        5 : 'strength',
+        5 : 'player_1_strength',
         7 : 'time_elapsed',
         8 : 'time_remaining',
         9 : 'play_type',
-        11 : 'play_description',
+        11 : 'play_description_html',
         13 : 'away_on_ice',
         15 : 'home_on_ice'
     }
@@ -296,10 +297,10 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
                 play_by_play_data[key_remaining].append(text_remaining)
 
     # convert data to Pandas dataframe
-    plays_scrape = pd.DataFrame(play_by_play_data)
+    plays_html = pd.DataFrame(play_by_play_data)
 
     # split home on ice column into individual columns
-    home_on_ice = ( plays_scrape['home_on_ice']
+    home_on_ice = ( plays_html['home_on_ice']
                     .str.strip()
                     .str.replace('[aA-zZ]', '')
                     .str.split(' ', expand=True) )
@@ -307,7 +308,7 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     home_on_ice.columns = home_cols
 
     # split away on ice column into individual columns
-    away_on_ice = ( plays_scrape['away_on_ice']
+    away_on_ice = ( plays_html['away_on_ice']
                     .str.strip()
                     .str.replace('[aA-zZ]', '')
                     .str.split(' ', expand=True) )
@@ -315,30 +316,35 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     away_on_ice.columns = away_cols
 
     # add the on ice player columns
-    plays_scrape[away_cols] = away_on_ice
-    plays_scrape[home_cols] = home_on_ice
+    plays_html[away_cols] = away_on_ice
+    plays_html[home_cols] = home_on_ice
 
     # add game id to the df
-    plays_scrape['game_id'] = game_id
+    plays_html['game_id'] = game_id
 
-    plays_scrape['play_type_id'] = plays_scrape['play_type'].map(play_lookup)
+    # add player_2_strength to the df
+    plays_html['player_2_strength'] = plays_html['player_1_strength'].apply(_get_player_2_strength)
+
+    # add play_type_id to match with api_df for joining
+    plays_html['play_type_id'] = plays_html['play_type'].map(play_lookup)
 
     # reorder columns
     cols = ['game_id',
             'event_id',
             'period',
-            'strength',
+            'player_1_strength',
+            'player_2_strength',
             'time_elapsed',
             'time_remaining',
             'play_type',
             'play_type_id',
-            'play_description',
+            'play_description_html',
             'away_on_ice',
             'home_on_ice',
             'away_1','away_2','away_3','away_4','away_5','away_6',
             'home_1','home_2','home_3','home_4','home_5','home_6']
-    plays_scrape = plays_scrape[cols]
-    plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
+    plays_html = plays_html[cols]
+    plays_html['period'] = pd.to_numeric(plays_html['period'])
 
     # get roster data to convert jersey numbers to player_id
     # create dictionary to convert season from numerical index
@@ -362,15 +368,15 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     roster_data['player_guid'] = roster_data['home_away'] + roster_data['jersey_number']
     player_dict = roster_data.set_index('player_guid').to_dict()['player_id']
 
-    # create guid columns for scraped data
-    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
-    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
+    # create guid columns for html data
+    plays_html.update(plays_html.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
+    plays_html.update(plays_html.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
 
-    # update scraped data with player IDs
-    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].replace(player_dict))
-    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].replace(player_dict))
+    # update html data with player IDs
+    plays_html.update(plays_html.loc[:,'away_1':'away_6'].replace(player_dict))
+    plays_html.update(plays_html.loc[:,'home_1':'home_6'].replace(player_dict))
 
-    return plays_scrape
+    return plays_html
 
 
 def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
@@ -464,7 +470,7 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
     return players
 
 
-def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, year : int) -> pd.DataFrame:
+def _combine_api_html_data(api_df : pd.DataFrame, html_df : pd.DataFrame, year : int) -> pd.DataFrame:
     """
     Parameters 
     ----------
@@ -472,7 +478,7 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
         A Pandas DataFrame constructed using the
         _parse_api_plays() method
 
-    scrape_df : DataFrame
+    html_df : DataFrame
         A Pandas DataFrame constructed using the
         _parse_players_on_ice() method
         {'pre', 'regular', 'post', 'all-star'}
@@ -486,26 +492,28 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
     pd.DataFrame
         The combined data as a pandas DataFrame
     """
-    # create updated game_id in scrape_df to match
+    # create updated game_id in html_df to match
     # the game_id column in api_df
-    scrape_df['game_id'] = (str(year) + scrape_df['game_id']).astype(int)
+    html_df['game_id'] = (str(year) + html_df['game_id']).astype(int)
 
-    # create list of columns to keep in scrape_df
-    scrape_cols = [
+    # create list of columns to keep in html_df
+    html_cols = [
         'game_id',
         'period',
-        'strength',
+        'player_1_strength',
+        'player_2_strength',
         'time_elapsed',
         'play_type_id',
+        'play_description_html',
         'away_1','away_2','away_3','away_4','away_5','away_6',
         'home_1','home_2','home_3','home_4','home_5','home_6'
     ]
 
     # filter out un-needed columns
-    scrape_df = scrape_df[scrape_cols]
+    html_df = html_df[html_cols]
 
     # join the dataframes together
-    combined_df = pd.merge(left=api_df, right= scrape_df, on = ['game_id', 'period', 'time_elapsed', 'play_type_id'])
+    combined_df = pd.merge(left=api_df, right= html_df, on = ['game_id', 'period', 'time_elapsed', 'play_type_id'])
     
     return combined_df
 
@@ -516,7 +524,7 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
     ----------
     combined_df : DataFrame
         A Pandas DataFrame constructed using the
-        _combine_api_scrape_data() method
+        _combine_api_html_data() method
         
     Returns
     -------
@@ -531,7 +539,8 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
         'game_id',
         'play_type_id',
         'period',
-        'strength',
+        'player_1_strength',
+        'player_2_strength',
         'time_elapsed',
         'play_x_coordinate',
         'play_y_coordinate',
@@ -548,17 +557,52 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
 
     return faceoff_df
 
+
+def _get_player_2_strength(player_1_strength : str) -> str:
+    """
+    Parameters
+    ----------
+    player_1_strength : str
+        The strength of player 1, i.e. even strength,
+        power play, or penalty kill
+    
+    Returns
+    -------
+    str
+        The strength of player 2, i.e. even strength,
+        power play, or penalty kill
+    """
+    if player_1_strength == "EV":
+        player_2_strength = "EV"
+    elif player_1_strength == "PP":
+        player_2_strength = "SH"
+    elif player_1_strength == "SH":
+        player_2_strength = "PP"
+    else:
+        player_2_strength = None
+    
+    return player_2_strength
+
+
+#def _get_zone_info(player_1_home_away, period, x_coord):
+    # TODO
+
+
 # TODO formalize functions to match SQL tables' column names
 
 if __name__ == "__main__":
-    api_data = _get_api_plays(2018, 'regular', 1)
-    api_df = _parse_api_plays(api_data)
-    scrape_data = _get_players_on_ice(2018, 'regular', 1)
-    scrape_df = _parse_players_on_ice(scrape_data[0], scrape_data[1], scrape_data[2])
-    combined_df = _combine_api_scrape_data(api_df, scrape_df, scrape_data[1])
+    for game in range(1,2):
+        api_data = _get_api_plays(2019, 'regular', game)
+        api_df = _parse_api_plays(api_data)
+        html_data = _get_players_on_ice(2019, 'regular', game)
+        html_df = _parse_players_on_ice(html_data[0], html_data[1], html_data[2])
+        combined_df = _combine_api_html_data(api_df, html_df, html_data[1])
+        faceoff_data = _get_faceoff_data(combined_df)  
 
-    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_api.csv')
-    scrape_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_scrape.csv')
-    combined_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/combined_df.csv')
-    # faceoff_data = _get_faceoff_data(combined_df)    
-    # faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
+    # text_file = open("/home/andrew-curthoys/Documents/Projects/data/sample.txt", "wt")
+    # n = text_file.write(str(html_data)[1000:])
+    # text_file.close()
+    #    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_api.csv')
+    #     html_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_html.csv')
+        combined_df.to_csv(f'/home/andrew-curthoys/Documents/Projects/data/combined_df_{game}.csv')
+    #    faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
