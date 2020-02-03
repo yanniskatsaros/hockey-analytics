@@ -544,6 +544,7 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
         'time_elapsed',
         'play_x_coordinate',
         'play_y_coordinate',
+        'play_description_html',
         'player1_id',
         'player2_id',
         'away_1','away_2','away_3','away_4','away_5','away_6',
@@ -554,6 +555,10 @@ def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
     # convert player1_id & player2_id columns to match roster data
     faceoff_df['player1_id'] = 'ID' + faceoff_df['player1_id'].astype(int).astype(str)
     faceoff_df['player2_id'] = 'ID' + faceoff_df['player2_id'].astype(int).astype(str)
+
+    # add zone info to the df
+    faceoff_df['player_1_zone'] = faceoff_df['play_description_html'].apply(_get_player_1_zone)
+    faceoff_df['player_2_zone'] = faceoff_df['player_1_zone'].apply(_get_player_2_zone)
 
     return faceoff_df
 
@@ -584,9 +589,49 @@ def _get_player_2_strength(player_1_strength : str) -> str:
     return player_2_strength
 
 
-#def _get_zone_info(player_1_home_away, period, x_coord):
-    # TODO
+def _get_player_1_zone(play_description : str) -> str:
+    """
+    Parameters
+    ----------
+    play_description : str
+        The description of the play from the html data
+    
+    Returns
+    -------
+    str
+        The zone of player 1, i.e. neutral zone,
+        offensive zone, or defensive zone
+    """
+    if play_description.find("Neu. Zone") > 0:
+        p1_zone = "Neutral Zone"
+    elif play_description.find("Off. Zone") > 0:
+        p1_zone = "Offensive Zone"
+    elif play_description.find("Def. Zone") > 0:
+        p1_zone = "Defensive Zone"
+    return p1_zone
 
+
+def _get_player_2_zone(player_1_zone : str) -> str:
+    """
+    Parameters
+    ----------
+    player_1_zone : str
+        The zone of player 2, i.e. neutral zone,
+        offensive zone, or defensive zone
+    
+    Returns
+    -------
+    str
+        The zone of player 2, i.e. neutral zone,
+        offensive zone, or defensive zone
+    """
+    if player_1_zone == "Neutral Zone":
+        p2_zone = "Neutral Zone"
+    elif player_1_zone == "Offensive Zone":
+        p2_zone = "Defensive Zone"
+    elif player_1_zone == "Defensive Zone":
+        p2_zone = "Offensive Zone"
+    return p2_zone
 
 # TODO formalize functions to match SQL tables' column names
 
@@ -605,4 +650,4 @@ if __name__ == "__main__":
     #    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_api.csv')
     #     html_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_html.csv')
         combined_df.to_csv(f'/home/andrew-curthoys/Documents/Projects/data/combined_df_{game}.csv')
-    #    faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
+        faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
