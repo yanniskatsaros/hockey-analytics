@@ -191,15 +191,23 @@ def _get_players_on_ice(year : int, season : str, game_number : int) -> Tuple[st
     url = f'http://www.nhl.com/scores/htmlreports/{year_id}/PL{game_id}.HTM'
     response = requests.get(url)
 
-    return response.text, year_id, game_id
+    return response.text, year, game_id
 
 
-def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFrame:
+def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame:
     """
     Parameters
     ----------
     html : str
         An HTML text of the play-by-play data
+    
+    year : int
+        The season starting year of the game
+        Example: 2018 (for the 2018-2019 season)
+    
+    game_id : str
+        The id for the game, which is a combination
+        of the season id and game id
 
     Returns
     -------
@@ -327,18 +335,20 @@ def _parse_players_on_ice(html : str, year_id : str, game_id : str) -> pd.DataFr
     plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
 
     # get roster data to convert jersey numbers to player_id
-    # first make the appropriate conversions
-    year = int(year_id[:4])
-    # convert season from numerical index back to human-friendly index
+    # create dictionary to convert season from numerical index
+    # back to human-friendly index
     season_dict = {
         '01' : 'pre',
         '02' : 'regular',
         '03' : 'post',
         '04' : 'all-star'
     }
+    # get season number from game_id then convert using season_dict
     season = game_id[:2]
     season : str = season_dict.get(season)
     game_number = int(game_id[2:])
+    
+    # pull roster data to get player IDs to add to dataframe
     roster_data = get_roster(year, season, game_number)
 
     # add player ID to dataframe
@@ -447,7 +457,68 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
     players = pd.DataFrame(players)
     return players
 
-# TODO combined plays with on-ice data to produce final dataset
+
+def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, year : int) -> pd.DataFrame:
+    """
+    Parameters 
+    ----------
+    api_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _parse_api_plays() method
+
+    scrape_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _parse_players_on_ice() method
+        {'pre', 'regular', 'post', 'all-star'}
+    
+    year : int
+        The season starting year of the game
+        Example: 2018 (for the 2018-2019 season)
+        
+    Returns
+    -------
+    pd.DataFrame
+        The combined data as a pandas DataFrame
+    """
+    # create updated game_id in scrape_df to match
+    # the game_id column in api_df
+    scrape_df['game_id'] = (str(year) + scrape_df['game_id']).astype(int)
+
+    # create list of play types to filter out
+    filter_plays = [
+        'GAME_SCHEDULED',
+        'PERIOD_READY',
+        'PERIOD_START',
+        'PERIOD_END',
+        'PERIOD_OFFICIAL',
+        'GAME_END',
+        'PENALTY',
+        'STOP'
+        ]
+
+    # filter out unnecessary plays from both dfs
+    # we need to filter these out since they don't take time off
+    # the clock & it will mess up the join
+    api_df = api_df[~api_df['play_type_id'].isin(filter_plays)]
+    scrape_df = scrape_df[~scrape_df['play_type_id'].isin(filter_plays)]
+
+    # create list of columns to keep in scrape_df
+    scrape_cols = [
+        'game_id',
+        'period',
+        'time_elapsed',
+        'away_1','away_2','away_3','away_4','away_5','away_6',
+        'home_1','home_2','home_3','home_4','home_5','home_6'
+    ]
+
+    # filter out un-needed columns
+    scrape_df = scrape_df[scrape_cols]
+
+    # join the dataframes together
+    combined_df = pd.merge(left=api_df, right= scrape_df, on = ['game_id', 'period', 'time_elapsed'])
+    
+    return combined_df
+
 # TODO formalize functions to match SQL tables' column names
 
 if __name__ == "__main__":
