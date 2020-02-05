@@ -634,20 +634,3 @@ def _get_player_2_zone(player_1_zone : str) -> str:
     return p2_zone
 
 # TODO formalize functions to match SQL tables' column names
-
-if __name__ == "__main__":
-    for game in range(1,2):
-        api_data = _get_api_plays(2019, 'regular', game)
-        api_df = _parse_api_plays(api_data)
-        html_data = _get_players_on_ice(2019, 'regular', game)
-        html_df = _parse_players_on_ice(html_data[0], html_data[1], html_data[2])
-        combined_df = _combine_api_html_data(api_df, html_df, html_data[1])
-        faceoff_data = _get_faceoff_data(combined_df)  
-
-    # text_file = open("/home/andrew-curthoys/Documents/Projects/data/sample.txt", "wt")
-    # n = text_file.write(str(html_data)[1000:])
-    # text_file.close()
-    #    api_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_api.csv')
-    #     html_df.to_csv('/home/andrew-curthoys/Documents/Projects/data/plays_html.csv')
-        combined_df.to_csv(f'/home/andrew-curthoys/Documents/Projects/data/combined_df_{game}.csv')
-        faceoff_data.to_csv('/home/andrew-curthoys/Documents/Projects/data/faceoff_df.csv')
