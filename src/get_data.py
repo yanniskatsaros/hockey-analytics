@@ -6,6 +6,7 @@ from dateutil.parser import parse
 from pytz import timezone
 from typing import Tuple, List
 
+
 def _get_api_plays(year : int, season : str, game_number : int) -> str:
     """
     Parameters 
@@ -91,9 +92,12 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         'home_team_id' : [],
         'home_team_code' : [],
         'event_id' : [],
+        'event_idx' : [],
         'play_type' : [],
         'play_type_id' : [],
-        'play_description' : [],
+        'play_description_api' : [],
+        'play_x_coordinate' : [],
+        'play_y_coordinate' : [],
         'period' : [],
         'time_elapsed' : [],
         'time_remaining' : [],
@@ -111,9 +115,12 @@ def _parse_api_plays(json : str) -> pd.DataFrame:
         plays["home_team_id"].append(home_team_id)
         plays["home_team_code"].append(home_team_code)
         plays['event_id'].append(play.get('about').get('eventId'))
+        plays['event_idx'].append(play.get('about').get('eventIdx'))
         plays['play_type'].append(play.get('result').get('event'))
         plays['play_type_id'].append(play.get('result').get('eventTypeId'))
-        plays['play_description'].append(play.get('result').get('description'))
+        plays['play_description_api'].append(play.get('result').get('description'))
+        plays['play_x_coordinate'].append(play.get('coordinates').get('x'))
+        plays['play_y_coordinate'].append(play.get('coordinates').get('y'))
         plays['period'].append(play.get('about').get('period'))
         plays['time_elapsed'].append(play.get('about').get('periodTime'))
         plays['time_remaining'].append(play.get('about').get('periodTimeRemaining'))
@@ -216,16 +223,16 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     """
     soup = BeautifulSoup(html, 'lxml')
     # trs - table rows in an HTML table
-    trs = soup.find_all('tr', class_='evenColor')
+    trs = soup.find_all('tr', {'class':['oddColor', 'evenColor']})#, class_='evenColor')
     # set up dictionary to hold data lists before converting to Pandas dataframe
     play_by_play_data = {
         'event_id' : [],
         'period' : [],
-        'strength' : [],
+        'player_1_strength' : [],
         'time_elapsed' : [],
         'time_remaining' : [],
         'play_type' : [],
-        'play_description' : [],
+        'play_description_html' : [],
         'away_on_ice' : [],
         'home_on_ice' : []
     }
@@ -234,11 +241,11 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     key_lookup = {
         1 : 'event_id',
         3 : 'period',
-        5 : 'strength',
+        5 : 'player_1_strength',
         7 : 'time_elapsed',
         8 : 'time_remaining',
         9 : 'play_type',
-        11 : 'play_description',
+        11 : 'play_description_html',
         13 : 'away_on_ice',
         15 : 'home_on_ice'
     }
@@ -290,10 +297,10 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
                 play_by_play_data[key_remaining].append(text_remaining)
 
     # convert data to Pandas dataframe
-    plays_scrape = pd.DataFrame(play_by_play_data)
+    plays_html = pd.DataFrame(play_by_play_data)
 
     # split home on ice column into individual columns
-    home_on_ice = ( plays_scrape['home_on_ice']
+    home_on_ice = ( plays_html['home_on_ice']
                     .str.strip()
                     .str.replace('[aA-zZ]', '')
                     .str.split(' ', expand=True) )
@@ -301,7 +308,7 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     home_on_ice.columns = home_cols
 
     # split away on ice column into individual columns
-    away_on_ice = ( plays_scrape['away_on_ice']
+    away_on_ice = ( plays_html['away_on_ice']
                     .str.strip()
                     .str.replace('[aA-zZ]', '')
                     .str.split(' ', expand=True) )
@@ -309,30 +316,35 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     away_on_ice.columns = away_cols
 
     # add the on ice player columns
-    plays_scrape[away_cols] = away_on_ice
-    plays_scrape[home_cols] = home_on_ice
+    plays_html[away_cols] = away_on_ice
+    plays_html[home_cols] = home_on_ice
 
     # add game id to the df
-    plays_scrape['game_id'] = game_id
+    plays_html['game_id'] = game_id
 
-    plays_scrape['play_type_id'] = plays_scrape['play_type'].map(play_lookup)
+    # add player_2_strength to the df
+    plays_html['player_2_strength'] = plays_html['player_1_strength'].apply(_get_player_2_strength)
+
+    # add play_type_id to match with api_df for joining
+    plays_html['play_type_id'] = plays_html['play_type'].map(play_lookup)
 
     # reorder columns
     cols = ['game_id',
             'event_id',
             'period',
-            'strength',
+            'player_1_strength',
+            'player_2_strength',
             'time_elapsed',
             'time_remaining',
             'play_type',
             'play_type_id',
-            'play_description',
+            'play_description_html',
             'away_on_ice',
             'home_on_ice',
             'away_1','away_2','away_3','away_4','away_5','away_6',
             'home_1','home_2','home_3','home_4','home_5','home_6']
-    plays_scrape = plays_scrape[cols]
-    plays_scrape['period'] = pd.to_numeric(plays_scrape['period'])
+    plays_html = plays_html[cols]
+    plays_html['period'] = pd.to_numeric(plays_html['period'])
 
     # get roster data to convert jersey numbers to player_id
     # create dictionary to convert season from numerical index
@@ -356,15 +368,15 @@ def _parse_players_on_ice(html : str, year : int, game_id : str) -> pd.DataFrame
     roster_data['player_guid'] = roster_data['home_away'] + roster_data['jersey_number']
     player_dict = roster_data.set_index('player_guid').to_dict()['player_id']
 
-    # create guid columns for scraped data
-    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
-    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
+    # create guid columns for html data
+    plays_html.update(plays_html.loc[:,'away_1':'away_6'].apply(lambda x: 'away' + x))
+    plays_html.update(plays_html.loc[:,'home_1':'home_6'].apply(lambda x: 'home' + x))
 
-    # update scraped data with player IDs
-    plays_scrape.update(plays_scrape.loc[:,'away_1':'away_6'].replace(player_dict))
-    plays_scrape.update(plays_scrape.loc[:,'home_1':'home_6'].replace(player_dict))
+    # update html data with player IDs
+    plays_html.update(plays_html.loc[:,'away_1':'away_6'].replace(player_dict))
+    plays_html.update(plays_html.loc[:,'home_1':'home_6'].replace(player_dict))
 
-    return plays_scrape
+    return plays_html
 
 
 def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
@@ -458,7 +470,7 @@ def get_roster(year : int, season : str, game_number : int) -> pd.DataFrame:
     return players
 
 
-def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, year : int) -> pd.DataFrame:
+def _combine_api_html_data(api_df : pd.DataFrame, html_df : pd.DataFrame, year : int) -> pd.DataFrame:
     """
     Parameters 
     ----------
@@ -466,7 +478,7 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
         A Pandas DataFrame constructed using the
         _parse_api_plays() method
 
-    scrape_df : DataFrame
+    html_df : DataFrame
         A Pandas DataFrame constructed using the
         _parse_players_on_ice() method
         {'pre', 'regular', 'post', 'all-star'}
@@ -480,45 +492,145 @@ def _combine_api_scrape_data(api_df : pd.DataFrame, scrape_df : pd.DataFrame, ye
     pd.DataFrame
         The combined data as a pandas DataFrame
     """
-    # create updated game_id in scrape_df to match
+    # create updated game_id in html_df to match
     # the game_id column in api_df
-    scrape_df['game_id'] = (str(year) + scrape_df['game_id']).astype(int)
+    html_df['game_id'] = (str(year) + html_df['game_id']).astype(int)
 
-    # create list of play types to filter out
-    filter_plays = [
-        'GAME_SCHEDULED',
-        'PERIOD_READY',
-        'PERIOD_START',
-        'PERIOD_END',
-        'PERIOD_OFFICIAL',
-        'GAME_END',
-        'PENALTY',
-        'STOP'
-        ]
-
-    # filter out unnecessary plays from both dfs
-    # we need to filter these out since they don't take time off
-    # the clock & it will mess up the join
-    api_df = api_df[~api_df['play_type_id'].isin(filter_plays)]
-    scrape_df = scrape_df[~scrape_df['play_type_id'].isin(filter_plays)]
-
-    # create list of columns to keep in scrape_df
-    scrape_cols = [
+    # create list of columns to keep in html_df
+    html_cols = [
         'game_id',
         'period',
+        'player_1_strength',
+        'player_2_strength',
         'time_elapsed',
+        'play_type_id',
+        'play_description_html',
         'away_1','away_2','away_3','away_4','away_5','away_6',
         'home_1','home_2','home_3','home_4','home_5','home_6'
     ]
 
     # filter out un-needed columns
-    scrape_df = scrape_df[scrape_cols]
+    html_df = html_df[html_cols]
 
     # join the dataframes together
-    combined_df = pd.merge(left=api_df, right= scrape_df, on = ['game_id', 'period', 'time_elapsed'])
+    combined_df = pd.merge(left=api_df, right= html_df, on = ['game_id', 'period', 'time_elapsed', 'play_type_id'])
     
     return combined_df
 
-# TODO formalize functions to match SQL tables' column names
 
-if __name__ == "__main__":
+def _get_faceoff_data(combined_df : pd.DataFrame) -> pd.DataFrame:
+    """
+    Parameters 
+    ----------
+    combined_df : DataFrame
+        A Pandas DataFrame constructed using the
+        _combine_api_html_data() method
+        
+    Returns
+    -------
+    pd.DataFrame
+        The combined data filtered to faceoff data
+        as a pandas DataFrame
+    """
+    faceoff_df = combined_df[combined_df['play_type_id'] == "FACEOFF"].reset_index()
+    
+    # create list of columns to keep in faceoff_df
+    faceoff_cols = [
+        'game_id',
+        'play_type_id',
+        'period',
+        'player_1_strength',
+        'player_2_strength',
+        'time_elapsed',
+        'play_x_coordinate',
+        'play_y_coordinate',
+        'play_description_html',
+        'player1_id',
+        'player2_id',
+        'away_1','away_2','away_3','away_4','away_5','away_6',
+        'home_1','home_2','home_3','home_4','home_5','home_6'
+    ]
+    faceoff_df = faceoff_df[faceoff_cols]
+
+    # convert player1_id & player2_id columns to match roster data
+    faceoff_df['player1_id'] = 'ID' + faceoff_df['player1_id'].astype(int).astype(str)
+    faceoff_df['player2_id'] = 'ID' + faceoff_df['player2_id'].astype(int).astype(str)
+
+    # add zone info to the df
+    faceoff_df['player_1_zone'] = faceoff_df['play_description_html'].apply(_get_player_1_zone)
+    faceoff_df['player_2_zone'] = faceoff_df['player_1_zone'].apply(_get_player_2_zone)
+
+    return faceoff_df
+
+
+def _get_player_2_strength(player_1_strength : str) -> str:
+    """
+    Parameters
+    ----------
+    player_1_strength : str
+        The strength of player 1, i.e. even strength,
+        power play, or penalty kill
+    
+    Returns
+    -------
+    str
+        The strength of player 2, i.e. even strength,
+        power play, or penalty kill
+    """
+    if player_1_strength == "EV":
+        player_2_strength = "EV"
+    elif player_1_strength == "PP":
+        player_2_strength = "SH"
+    elif player_1_strength == "SH":
+        player_2_strength = "PP"
+    else:
+        player_2_strength = None
+    
+    return player_2_strength
+
+
+def _get_player_1_zone(play_description : str) -> str:
+    """
+    Parameters
+    ----------
+    play_description : str
+        The description of the play from the html data
+    
+    Returns
+    -------
+    str
+        The zone of player 1, i.e. neutral zone,
+        offensive zone, or defensive zone
+    """
+    if play_description.find("Neu. Zone") > 0:
+        p1_zone = "Neutral Zone"
+    elif play_description.find("Off. Zone") > 0:
+        p1_zone = "Offensive Zone"
+    elif play_description.find("Def. Zone") > 0:
+        p1_zone = "Defensive Zone"
+    return p1_zone
+
+
+def _get_player_2_zone(player_1_zone : str) -> str:
+    """
+    Parameters
+    ----------
+    player_1_zone : str
+        The zone of player 2, i.e. neutral zone,
+        offensive zone, or defensive zone
+    
+    Returns
+    -------
+    str
+        The zone of player 2, i.e. neutral zone,
+        offensive zone, or defensive zone
+    """
+    if player_1_zone == "Neutral Zone":
+        p2_zone = "Neutral Zone"
+    elif player_1_zone == "Offensive Zone":
+        p2_zone = "Defensive Zone"
+    elif player_1_zone == "Defensive Zone":
+        p2_zone = "Offensive Zone"
+    return p2_zone
+
+# TODO formalize functions to match SQL tables' column names
